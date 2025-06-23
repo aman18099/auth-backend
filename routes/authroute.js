@@ -1,13 +1,11 @@
 const  express = require("express")
-const { registercontroller } = require("../controllers/authcontroller")
+const { registerController, loginController } = require("../controllers/authcontroller")
 
 const authRouter = express.Router()
 
-authRouter.post("/signup" , registercontroller)
+authRouter.post("/signup" , registerController)
 
-authRouter.post("/login" , (req,res)=>{
-
-})
+authRouter.post("/login" , loginController)
 
 authRouter.post("/logout" ,(req,res) =>{
 
