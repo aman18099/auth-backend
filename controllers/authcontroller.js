@@ -1,7 +1,8 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken')
-
-const User = require('../models/usermodel')
+const nodemailer = require('nodemailer');
+const User = require('../models/usermodel');
+const transporter = require('../utils/mailhandler');
 exports.registerController = async(req,res,next) =>{
     const {username , name , email, password} = req.body
     try {
@@ -23,6 +24,29 @@ exports.registerController = async(req,res,next) =>{
         const data = new User({name, username,email,password:hashedPassword})
         const saveduser = await data.save()
         console.log(saveduser)
+
+        let OTP = Math.floor(Math.random() * 1000000)
+        try {
+            const mailOptions = {
+                from:process.env.SMTP_USER,
+                to: 'yihobed937@ofacer.com',
+                subject: 'Login Notification',
+                html: `
+                    <h1>Login Successful</h1>
+                    <p>Hello ${data.name},</p>
+                    <p>You logged in at ${new Date().toLocaleString()}.</p>
+                    <p>Your OTP is ${OTP}</p>
+                `
+            };
+            
+            const info = await transporter.sendMail(mailOptions);
+            console.log('Email sent:', {
+                messageId: info.messageId,
+                previewURL: nodemailer.getTestMessageUrl(info)
+            });
+        } catch (error) {
+            console.error('Email failed:', error);
+        }
 
         return res.status(200).json({message: " User Register Successfully"})
     } catch (error) {
@@ -66,6 +90,9 @@ exports.loginController = async(req,res,next)=>{
 
         res.cookie("accesstoken" , token , {httpOnly:true , secure:true})
         res.cookie("refreshtoken" , refreshToken , {httpOnly:true , secure:true})
+
+        
+
         return res.status(201).json({message: "Login successful" , data:user})
 
     } catch (error) {
