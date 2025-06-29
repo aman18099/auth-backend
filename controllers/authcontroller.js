@@ -21,9 +21,24 @@ exports.registerController = async(req,res,next) =>{
         }
 
         const hashedPassword = await bcrypt.hash(password , 2)
-        const data = new User({name, username,email,password:hashedPassword})
-        const saveduser = await data.save()
-        console.log(saveduser)
+        const user = new User({name, username,email,password:hashedPassword})
+
+        const token = jwt.sign(
+            { userId: user._id, email: user.email },
+            process.env.SECRET_KEY,
+            { expiresIn: '1h' }
+        );
+
+        const refreshToken = jwt.sign(
+            { userId: user._id },
+            process.env.SECRET_KEY,
+            { expiresIn: '7d' }
+        );
+        user.refreshToken = refreshToken;
+        await user.save();
+
+        res.cookie("accesstoken" , token , {httpOnly:true , secure:true})
+        res.cookie("refreshtoken" , refreshToken , {httpOnly:true , secure:true})
 
         let OTP = Math.floor(Math.random() * 1000000)
         try {
@@ -33,7 +48,7 @@ exports.registerController = async(req,res,next) =>{
                 subject: 'Login Notification',
                 html: `
                     <h1>Login Successful</h1>
-                    <p>Hello ${data.name},</p>
+                    <p>Hello ${user.name},</p>
                     <p>You logged in at ${new Date().toLocaleString()}.</p>
                     <p>Your OTP is ${OTP}</p>
                 `
@@ -44,8 +59,15 @@ exports.registerController = async(req,res,next) =>{
                 messageId: info.messageId,
                 previewURL: nodemailer.getTestMessageUrl(info)
             });
+
+            const savedUser = await user.save()
+            savedUser.refreshToken = refreshToken
+            savedUser.otp = OTP
+            await savedUser.save()
+            console.log(savedUser)
         } catch (error) {
             console.error('Email failed:', error);
+            res.status(400).json({message : error})
         }
 
         return res.status(200).json({message: " User Register Successfully"})
@@ -95,6 +117,78 @@ exports.loginController = async(req,res,next)=>{
 
         return res.status(201).json({message: "Login successful" , data:user})
 
+    } catch (error) {
+        return res.status(400).json({message:error})
+    }
+}
+
+exports.refreshTokenController = async(req,res,next)=>{
+    const refreshToken = req.cookies.refreshtoken
+
+    try {
+        if(!refreshToken){
+            return res.status(401).json({message: "No refresh Token"})
+        }
+
+        console.log(refreshToken)
+
+        const decodedtoken = jwt.verify(refreshToken , process.env.SECRET_KEY)
+
+        const user = await User.findById(decodedtoken?.userId)
+        console.log(user)
+
+        if(!user){
+            return res.status(401).json({message: "No user found"})
+        }
+
+        if(user?.refreshToken != refreshToken){
+            return res.status(401).json({message: "Refresh Token doesnt match"})
+        }
+
+        const newAccessToken = jwt.sign({ userId: user._id, email: user.email },
+            process.env.SECRET_KEY,
+            { expiresIn: '1h' }) 
+        
+        const newRefreshToken = jwt.sign({ userId: user._id, email: user.email },
+            process.env.SECRET_KEY,
+            { expiresIn: '7d' }) 
+
+        user.refreshToken = newRefreshToken;
+        await user.save();
+
+        res.cookie("accesstoken" , newAccessToken , {httpOnly:true , secure:true})
+        res.cookie("refreshtoken" , newRefreshToken , {httpOnly:true , secure:true})
+
+        return res.status(200).json({ message: "Tokens refreshed successfully." });
+
+    } catch (error) {
+        return res.status(400).json({message:error})
+    }
+}
+
+exports.verifyOTPController = async(req,res,next)=>{
+    const {OTP} = req.body
+    const token = req.cookies.accesstoken
+    try {
+        if (!OTP) {
+            return res.status(400).json({ error: "field is  required." });
+        }
+        if (!token) {
+            return res.status(401).json({ error: "No access token provided." });
+        }
+        const decodedtoken = jwt.verify(token , process.env.SECRET_KEY)
+        const {userId} = decodedtoken
+        const loggedInUser = await User.findById(userId) 
+
+        if (!loggedInUser) {
+            return res.status(404).json({ error: "User not found." });
+        }
+        
+        if(loggedInUser.otp !== +OTP){
+            console.log(loggedInUser.otp , OTP)
+            return res.status(400).json({message: "Wrong OTP , try Again"})
+        }
+        return res.status(200).json({message: "OTP matched , user verified"})
     } catch (error) {
         return res.status(400).json({message:error})
     }

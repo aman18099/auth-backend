@@ -23,7 +23,6 @@ const UserSchema = new Schema({
     },
     otp:{
         type:Number,
-        max:6
     },
     emailVerified:{
         type:Boolean,
